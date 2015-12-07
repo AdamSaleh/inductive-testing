@@ -2,7 +2,9 @@
   (:require [reagent.core :as reagent :refer [atom]]
             [reagent.session :as session]
             [inductive.core :as core]
-            [clojure.string :as str])
+            [clojure.string :as str]
+            [cljs.core.match :refer-macros [match]]
+            [cljs.test :as t :include-macros true :refer-macros [testing is]])
   (:require-macros
    [devcards.core
     :as dc
@@ -51,6 +53,42 @@
 :when "add-user $LOGIN2 to-team $TEAM"
 :then "team $TEAM contains $LOGIN"}]}))
 
+
+(defn fact-matches-predicate [fact predicate]
+(into #{}
+  (->> condition
+    (#(str/split % #" "))
+    (map #(re-matches #"^\$(.*)" %))
+    (remove nil?)
+    (map second)
+    (map keyword))))
+
+(deftest predicate-match-test
+  "We need to be able to test that fact matches precondition"
+  (testing
+    (is (= (get-variables "user admin loggedin") #{}) "user admin loggedin has no vars")
+    (is (= (get-variables "user $LOGIN loggedin") #{:LOGIN}) "user $LOGIN loggedin has :LOGIN var")
+    (is (= (get-variables "user $LOGIN $PASSWORD exists") #{:LOGIN :PASSWORD}) "user $LOGIN $PASSWORD exists has :LOGIN, :PASSWORD var")
+    ))
+
+
+(defn get-variables [condition]
+(into #{}
+  (->> condition
+    (#(str/split % #" "))
+    (map #(re-matches #"^\$(.*)" %))
+    (remove nil?)
+    (map second)
+    (map keyword))))
+
+(deftest get-variables-test
+  "We need to be able to get $VARIABLE from precondition"
+  (testing
+    (is (= (get-variables "user admin loggedin") #{}) "user admin loggedin has no vars")
+    (is (= (get-variables "user $LOGIN loggedin") #{:LOGIN}) "user $LOGIN loggedin has :LOGIN var")
+    (is (= (get-variables "user $LOGIN $PASSWORD exists") #{:LOGIN :PASSWORD}) "user $LOGIN $PASSWORD exists has :LOGIN, :PASSWORD var")
+    ))
+
 (defcard-rg facts-card
   (fn [data-atom owner]
   [:ol (for [f (:facts @data-atom)] [:li f])])
@@ -66,9 +104,6 @@
 (defn render-behavior-abbr [b]
  [:dl [:dt (:behavior b)]
       [:dd (:then b)]])
-
-(defn get-variables [condition]
-  (str/split condition #" "))
 
 (defcard-rg preconditions
   (fn [data-atom owner]
