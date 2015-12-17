@@ -54,22 +54,38 @@
 :then "team $TEAM contains $LOGIN"}]}))
 
 
-(defn fact-matches-predicate [fact predicate]
-(into #{}
-  (->> condition
-    (#(str/split % #" "))
-    (map #(re-matches #"^\$(.*)" %))
-    (remove nil?)
-    (map second)
-    (map keyword))))
+(defn genast [factoid]
+    (->> factoid
+      (#(str/split % #" "))
+      (map #(let [m (re-matches #"^\$(.*)" %)]
+              (if m (keyword (second m)) %)))
+      (into [])))
+
+(defn match-fact-pred [f p]
+  (let [fact (genast f)
+        pred (genast p)
+        result (reduce (fn [acc i]
+          (if (keyword? i)
+          (match [acc]
+            [{:res res :remaining [x & rest]}] (assoc acc :remaining rest :res (assoc res i x))
+            :else acc)
+          (match [acc]
+            [{:remaining [i & rest]}] (assoc acc :remaining rest)
+            :else (reduced (assoc acc :matches false)))
+          ))
+          {:res {} :matches true :remaining fact} pred)]
+    (match [result]
+      [{:matches true :remaining [] :res r}] r
+      :else nil)))
 
 (deftest predicate-match-test
   "We need to be able to test that fact matches precondition"
   (testing
-    (is (= (get-variables "user admin loggedin") #{}) "user admin loggedin has no vars")
-    (is (= (get-variables "user $LOGIN loggedin") #{:LOGIN}) "user $LOGIN loggedin has :LOGIN var")
-    (is (= (get-variables "user $LOGIN $PASSWORD exists") #{:LOGIN :PASSWORD}) "user $LOGIN $PASSWORD exists has :LOGIN, :PASSWORD var")
-    ))
+    (is (= nil (match-fact-pred "user admin Password1 exists" "user admin Password1 exists not")) "nil on no match")
+    (is (= nil (match-fact-pred "user admin Password1 exists not" "user admin Password1 exists")) "nil on no match")
+    (is (= nil (match-fact-pred "user admin Password1 removed" "user admin Password1 exists")) "nil on no match")
+    (is (= {} (match-fact-pred "user admin Password1 exists" "user admin Password1 exists")) "Empty dict on exact match")
+    (is (= {:LOGIN "admin" :PASSWORD "Password1"} (match-fact-pred "user admin Password1 exists" "user $LOGIN $PASSWORD exists")) "Extract vars")))
 
 
 (defn get-variables [condition]
