@@ -2,6 +2,7 @@
   (:require [reagent.core :as reagent :refer [atom]]
             [reagent.session :as session]
             [inductive.core :as core]
+            [inductive.initial :as initial :refer [example-state]]
             [clojure.string :as str]
             [cljs.core.match :refer-macros [match]]
             [cljs.test :as t :include-macros true :refer-macros [testing is]])
@@ -12,46 +13,7 @@
 
 (enable-console-print!)
 
-(defonce state (atom {
-:facts [
-  "user admin Passsword1 exists",
-  "user admin has-privilege-to WRITE ALL USERS",
-  "user admin has-privilege-to WRITE ALL TEAMS"
-        ]
-:behaviors [
-{
-:behavior "User login"
-:given ["user $LOGIN $PASSWORD exists"]
-:when "login $LOGIN $PASSWORD"
-:then "user $LOGIN loggedin"
-}
-
-{:behavior "Infer user privilege"
-:given ["team $TEAM exists",
- "team $TEAM contains $LOGIN",
- "team $TEAM has-privilege-to $ACTION $SCOPE $OBJECTS"]
-:then "user $LOGIN has-privilege-to $ACTION $SCOPE $OBJECTS"}
-
-{:behavior "Team create"
-:given ["user $LOGIN loggedin",
-       "user $LOGIN with-privilege-to WRITE ALL TEAMS"]
-:when "create team $TEAM"
-:then "team $TEAM exists"}
-
-{:behavior "Team privileges"
-:given ["user $LOGIN loggedin",
-       "user $LOGIN with-privilege-to WRITE ALL TEAMS",
-       "$ACTION in NONE READ WRITE",
-       "$SCOPE in ALL NONE",
-       "$OBJECTS in TEAMS USERS"]
-:when "add-privilege $ACTION $SCOPE $OBJECT to-team $TEAM"
-:then "team $TEAM has-privilege-to $ACTION $SCOPE $OBJECTS"}
-
-{:behavior "Team user"
-:given ["user $LOGIN loggedin",
-        "user $LOGIN with-privilege-to WRITE ALL TEAMS"]
-:when "add-user $LOGIN2 to-team $TEAM"
-:then "team $TEAM contains $LOGIN"}]}))
+(defonce state (atom example-state))
 
 
 (defn genast [factoid]
@@ -87,7 +49,6 @@
     (is (= {} (match-fact-pred "user admin Password1 exists" "user admin Password1 exists")) "Empty dict on exact match")
     (is (= {:LOGIN "admin" :PASSWORD "Password1"} (match-fact-pred "user admin Password1 exists" "user $LOGIN $PASSWORD exists")) "Extract vars")))
 
-
 (defn get-variables [condition]
 (into #{}
   (->> condition
@@ -104,6 +65,36 @@
     (is (= (get-variables "user $LOGIN loggedin") #{:LOGIN}) "user $LOGIN loggedin has :LOGIN var")
     (is (= (get-variables "user $LOGIN $PASSWORD exists") #{:LOGIN :PASSWORD}) "user $LOGIN $PASSWORD exists has :LOGIN, :PASSWORD var")
     ))
+
+(defn apply-behavior [facts behavior]
+  facts)
+
+(def user-login-behavior {
+:behavior "User login"
+:given ["user $LOGIN $PASSWORD exists"]
+:when "login $LOGIN $PASSWORD"
+:then "user $LOGIN loggedin"
+})
+
+(def user-login-behavior-complex {
+:behavior "User login"
+:given ["user $LOGIN $PASSWORD exists"]
+:when "login $LOGIN $PASSWORD"
+:then "user $LOGIN loggedin"
+})
+
+(deftest behavior-test
+  "If we have facts and behavior, we can calculate new facts"
+  (testing
+    (is (= (apply-behavior ["user admin Passsword1 exists"] user-login-behavior) ["user admin Passsword1 exists", "user admin loggedin"]) "user admin loggedin has no vars")
+    (is (= (apply-behavior ["user has magic ossifrage"] user-login-behavior) ["user has magic ossifrage"]) "user admin loggedin has no vars")
+    (is (= (apply-behavior ["user can factor", "user has magic ossifrage"] user-login-behavior) ["user can factor", "user has magic ossifrage"]) "user admin loggedin has no vars")
+    (is (= (apply-behavior ["user admin Passsword1 exists","user jrandom Passsword1 exists"] user-login-behavior) ["user jrandom Passsword1 exists", "user admin loggedin"]) "user admin loggedin has no vars")
+    (is (= (apply-behavior ["user admin Passsword1 exists","user jrandom Passsword1 exists","user trandom Passsword1 exists"] user-login-behavior) ["user trandom Passsword1 exists", "user admin loggedin"]) "user admin loggedin has no vars")
+
+    (is (= (get-variables "user $LOGIN loggedin") #{:LOGIN}) "user $LOGIN loggedin has :LOGIN var")
+    (is (= (get-variables "user $LOGIN $PASSWORD exists") #{:LOGIN :PASSWORD}) "user $LOGIN $PASSWORD exists has :LOGIN, :PASSWORD var")
+    )))
 
 (defcard-rg facts-card
   (fn [data-atom owner]
